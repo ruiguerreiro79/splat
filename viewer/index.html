@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splat Viewer</title>
+<style>
+  :root { --bg:#111; --fg:#eee; --muted:#999; --accent:#4cc3ff; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+               font:14px/1.4 system-ui, sans-serif; overflow:hidden; }
+  #root { position:fixed; inset:0; }
+  #panel { position:fixed; top:12px; left:12px; z-index:10; background:#000a;
+           padding:10px 14px; border-radius:8px; max-width:340px; }
+  #panel b { color:var(--accent); }
+  #panel small { color:var(--muted); display:block; margin-top:6px; }
+  #drop { position:fixed; inset:0; display:none; place-items:center; z-index:20;
+          background:#0009; border:3px dashed var(--accent); font-size:22px; }
+  body.dragging #drop { display:grid; }
+  #status { margin-top:6px; color:var(--muted); }
+  input[type=file] { margin-top:6px; color:var(--fg); max-width:100%; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.min.js"
+} }
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div id="panel">
+  <b>Splat Viewer</b>
+  <div id="status">Arrasta um ficheiro .ply / .splat / .ksplat para aqui.</div>
+  <input type="file" id="file" accept=".ply,.splat,.ksplat">
+  <small>Rato esq.: rodar &middot; dir.: mover &middot; roda: zoom</small>
+</div>
+<div id="drop">Larga o ficheiro para abrir</div>
+
+<script type="module">
+import * as GS from "@mkkellogg/gaussian-splats-3d";
+
+const status = (t) => document.getElementById("status").textContent = t;
+let viewer = null;
+
+function formatFor(name) {
+  const n = name.toLowerCase();
+  if (n.endsWith(".splat")) return GS.SceneFormat.Splat;
+  if (n.endsWith(".ksplat")) return GS.SceneFormat.KSplat;
+  return GS.SceneFormat.Ply;
+}
+
+async function load(url, name) {
+  status(`A carregar ${name}…`);
+  if (viewer) { await viewer.dispose(); document.getElementById("root").innerHTML = ""; }
+  viewer = new GS.Viewer({
+    rootElement: document.getElementById("root"),
+    cameraUp: [0, -1, 0],            // COLMAP usa Y para baixo
+    initialCameraPosition: [0, -1, -4],
+    initialCameraLookAt: [0, 0, 0],
+    sharedMemoryForWorkers: false,   // nao precisa de cabecalhos COOP/COEP
+    sphericalHarmonicsDegree: 2,
+  });
+  try {
+    await viewer.addSplatScene(url, { format: formatFor(name), showLoadingUI: true,
+                                      progressiveLoad: false });
+    viewer.start();
+    status(name);
+  } catch (e) {
+    console.error(e);
+    status(`Erro ao abrir ${name}: ${e.message || e}`);
+  }
+}
+
+function openFile(f) { load(URL.createObjectURL(f), f.name); }
+
+document.getElementById("file").addEventListener("change", (e) => {
+  if (e.target.files[0]) openFile(e.target.files[0]);
+});
+addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("dragging"); });
+addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+addEventListener("drop", (e) => {
+  e.preventDefault(); document.body.classList.remove("dragging");
+  const f = e.dataTransfer.files[0]; if (f) openFile(f);
+});
+
+const qs = new URLSearchParams(location.search).get("file");
+if (qs) load(qs, qs.split("/").pop());
+</script>
+</body>
+</html>
